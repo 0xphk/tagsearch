@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+#
+# info:
+# - requires 'id3lib', 'fd' ('find' can be used as alternative, if 'fd' isn't available)
+# - 'id3info' is quite slow, so there is no real speed advantage to use 'fd' over 'find'
+#
+# notes:
+# - some special tags (comment,key) may require additional tagging (traktor)
+#
+# license:
+# - this is free software, do whatever you like with it
+#
+# phk (2022)
+
+help() {
+echo "
+usage: ${0##*/} [option] 'search string' ([option] 'search string' ...)
+       multiple tags (or based lookup) supported
+
+       tag options: -a artist
+                    -b album
+                    -c comment
+                    -g genre
+                    -k key
+                    -t title
+"
+}
+
+while getopts :a:b:c:g:k:t:h opt ; do
+  case $opt in
+    a) artist=${OPTARG} ;;
+    b) album=${OPTARG} ;;
+    c) comment=${OPTARG} ;;
+    g) genre=${OPTARG} ;;
+    k) key=${OPTARG} ;;
+    t) title=${OPTARG} ;;
+    h) echo -e "\033[1mid3 tagsearch - recursive search for strings in idtags\033[0m"; help; exit 0 ;;
+    :) echo -e "\033[1mtag -"$OPTARG" requires 'searchstring'\033[0m" >&2; help; exit 1;;
+  esac
+done
+
+[ "$OPTIND" -eq 1 ] && echo -e "\033[1mno tag option specified\033[0m" && help && exit 1
+
+shift $(($OPTIND - 1))
+
+### to use 'find' instead of 'fd'
+#find . -name '*.mp3' -print0 | \
+
+fd mp3 -0 | \
+### use null byte delimiter $'\0' instead of empty string ''
+while read -r -d '' files; do
+
+  ### to print only filename
+  #file=${files##*/}
+
+  ### to print full path
+  #file=${files}
+
+  ### to print only parent directory/filename
+  file=$(echo $files | rev | cut -d'/' -f-2 | rev)
+
+  tags="$(id3info "$files")"
+  [ "$artist" ] && { ( ra=$(echo "$tags" | grep "TPE1.*$artist" | awk -F: '{ print $2 }'); [ ! -z "$ra" ] && echo "$file artist:$ra" ) || continue ; }
+  [ "$album" ] && { ( rb=$(echo "$tags" | grep "TALB.*$album" | awk -F: '{ print $2 }'); [ ! -z "$rb" ] && echo "$file album:$rb" ) || continue ; }
+  [ "$comment" ] && { ( rc=$(echo "$tags" | grep "COMM.*eng]:.*$comment" | awk -F: '{ print $3 }'); [ ! -z "$rc" ] && echo "$file comment:$rc" ) || continue ; }
+  [ "$genre" ] && { ( rg=$(echo "$tags" | grep "TCON.*$genre" | awk -F: '{ print $2 }'); [ ! -z "$rg" ] && echo "$file genre:$rg" ) || continue ; }
+  [ "$key" ] && { ( rk=$(echo "$tags" | grep "TKEY.*$key" | awk -F: '{ print $2 }'); [ ! -z "$rk" ] && echo "$file key:$rk" ) || continue ; }
+  [ "$title" ] && { ( rt=$(echo "$tags" | grep "TIT2.*$title" | awk -F: '{ print $2 }'); [ ! -z "$rt" ] && echo "$file title:$rt" ) || continue ; }
+done
+
